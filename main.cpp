@@ -9,6 +9,8 @@
 
 using namespace std;
 
+static GDBusConnection *g_dbus = nullptr;
+
 static xcb_connection_t *g_conn = nullptr;
 static uint16_t g_width = 0;
 static uint16_t g_height = 0;
@@ -45,7 +47,19 @@ static gboolean onScalingFactorChange(gpointer)
 {
     g_timeoutOnScalingFactorChange = 0;
 
-    g_spawn_command_line_async("xfce4-panel -r", nullptr);
+    g_variant_unref(g_dbus_connection_call_sync(
+        g_dbus,
+        "org.xfce.Panel",
+        "/org/xfce/Panel",
+        "org.xfce.Panel",
+        "Terminate",
+        g_variant_new("(b)", true),
+        nullptr,
+        G_DBUS_CALL_FLAGS_NO_AUTO_START,
+        -1,
+        nullptr,
+        nullptr
+    ));
 
     gchar *styleRaw = nullptr;
     if (g_spawn_command_line_sync("xfconf-query -c xfwm4 -p /general/theme", &styleRaw, nullptr, nullptr, nullptr) && styleRaw)
@@ -124,9 +138,16 @@ static gboolean processXcbEvents(gint fd, GIOCondition condition, gpointer)
 
 int main()
 {
+    g_dbus = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, nullptr);
+    if (!g_dbus)
+        return -1;
+
     g_conn = xcb_connect(nullptr, nullptr);
     if (!g_conn)
+    {
+        g_dbus_connection_close_sync(g_dbus, nullptr, nullptr);
         return -1;
+    }
 
     auto xcbSource = g_unix_fd_add(xcb_get_file_descriptor(g_conn), G_IO_IN, processXcbEvents, nullptr);
 
@@ -164,6 +185,8 @@ int main()
 
     g_source_remove(xcbSource);
     xcb_disconnect(g_conn);
+
+    g_dbus_connection_close_sync(g_dbus, nullptr, nullptr);
 
     return 0;
 }
