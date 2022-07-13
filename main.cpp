@@ -127,7 +127,7 @@ static gboolean processXcbEvents(gint fd, GIOCondition condition, gpointer)
             g_height = re->height;
 
             stopTimeoutMateDesktop();
-            g_timeoutOnScreenSizeChange = g_timeout_add(2000, onScreenSizeChange, nullptr);
+            g_timeoutOnScreenSizeChange = g_timeout_add(2500, onScreenSizeChange, nullptr);
         }
     }
 
