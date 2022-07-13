@@ -4,7 +4,9 @@
 #include <gio/gio.h>
 #include <glib-unix.h>
 
+#include <filesystem>
 #include <algorithm>
+#include <fstream>
 #include <string>
 
 using namespace std;
@@ -43,6 +45,64 @@ static void showDesktopIcons(bool show)
     g_settings_set_boolean(g_setsDesktopBg, "show-desktop-icons", show);
 }
 
+static bool isXfwm4Running()
+{
+    for (const auto &dir_entry : filesystem::directory_iterator("/proc"))
+    {
+        if (!dir_entry.is_directory())
+            continue;
+
+        auto path = dir_entry.path();
+        path.append("status");
+
+        ifstream f;
+        f.open(path.string());
+        if (!f.is_open())
+            continue;
+
+        const auto currUid = to_string(getuid());
+        string line;
+        bool nameOk = false;
+        bool uidOk = false;
+        while (getline(f, line))
+        {
+            if (!nameOk)
+            {
+                if (const auto idx = line.rfind("Name:", 0); idx != string::npos)
+                {
+                    char name[6] = {};
+                    if (sscanf(line.c_str() + idx + 5, "%5s", name) != 1)
+                        break;
+
+                    if (g_strcmp0(name, "xfwm4") != 0)
+                        break;
+
+                    nameOk = true;
+                }
+            }
+            if (!uidOk)
+            {
+                if (const auto idx = line.rfind("Uid:", 0); idx != string::npos)
+                {
+                    char uid[6] = {};
+                    if (sscanf(line.c_str() + idx + 4, "%5s", uid) != 1)
+                        break;
+
+                    if (g_strcmp0(uid, currUid.c_str()) != 0)
+                        break;
+
+                    uidOk = true;
+                }
+            }
+            if (nameOk && uidOk)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 static gboolean onScalingFactorChange(gpointer)
 {
     g_timeoutOnScalingFactorChange = 0;
@@ -61,26 +121,29 @@ static gboolean onScalingFactorChange(gpointer)
         nullptr
     ));
 
-    gchar *styleRaw = nullptr;
-    if (g_spawn_command_line_sync("xfconf-query -c xfwm4 -p /general/theme", &styleRaw, nullptr, nullptr, nullptr) && styleRaw)
+    if (isXfwm4Running())
     {
-        const string_view styleView(styleRaw);
-        const auto pos1 = styleView.rfind("\n");
-        const auto pos2 = styleView.rfind("-hdpi");
-        const auto pos3 = styleView.rfind("-xhdpi");
-        const auto pos = min({pos1, pos2, pos3});
-        if (pos != string::npos)
+        gchar *styleRaw = nullptr;
+        if (g_spawn_command_line_sync("xfconf-query -c xfwm4 -p /general/theme", &styleRaw, nullptr, nullptr, nullptr) && styleRaw)
         {
-            const auto scalingFactor = g_settings_get_int(g_setsMateIface, "window-scaling-factor");
-            auto style = string(styleView.substr(0, pos));
-            if (scalingFactor == 2)
-                style += "-hdpi";
-            else if (scalingFactor > 2)
-                style += "-xhdpi";
-            g_spawn_command_line_async(("xfconf-query -c xfwm4 -p /general/theme -s " + style).c_str(), nullptr);
+            const string_view styleView(styleRaw);
+            const auto pos1 = styleView.rfind("\n");
+            const auto pos2 = styleView.rfind("-hdpi");
+            const auto pos3 = styleView.rfind("-xhdpi");
+            const auto pos = min({pos1, pos2, pos3});
+            if (pos != string::npos)
+            {
+                const auto scalingFactor = g_settings_get_int(g_setsMateIface, "window-scaling-factor");
+                auto style = string(styleView.substr(0, pos));
+                if (scalingFactor == 2)
+                    style += "-hdpi";
+                else if (scalingFactor > 2)
+                    style += "-xhdpi";
+                g_spawn_command_line_async(("xfconf-query -c xfwm4 -p /general/theme -s " + style).c_str(), nullptr);
+            }
         }
+        g_free(styleRaw);
     }
-    g_free(styleRaw);
 
     showDesktopIcons(false);
     showDesktopIcons(true);
