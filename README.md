@@ -24,3 +24,7 @@ cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
 make
 sudo make install/strip
 ```
+
+---
+
+It's available in [AUR](https://aur.archlinux.org/packages/mate-xfce-tool-git)
